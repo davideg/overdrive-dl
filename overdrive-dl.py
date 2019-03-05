@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 import requests
 
 from os.path import abspath, exists, expanduser
+from mutagen.easyid3 import EasyID3
 
 USER_AGENT = 'OverDrive Media Console'
 USER_AGENT_LONG = 'OverDrive Media Console (unknown version)' \
@@ -31,9 +32,10 @@ DOWNLOAD_FILENAME_FORMAT = 'part{number:02d}.mp3'
 COVER_FILENAME_FORMAT = '{title}.jpg'
 LOWERCASE = True
 CHUNK_SIZE = 1024
+TAGS_TO_UPDATE = {'genre': 'Audiobook'}
 
 
-def download_audiobook(odm_filename):
+def download_audiobook(odm_filename, update_tags=False):
     license = ''
     license_filepath = odm_filename + '.license'
     if not exists(license_filepath):
@@ -163,6 +165,18 @@ def download_audiobook(odm_filename):
                 sys.stdout.flush()
                 # TODO look into using tqdm as progress bar
 
+        # Update ID3 tags
+        if update_tags and TAGS_TO_UPDATE:
+            logging.info('Updating ID3 tags')
+            for part in range(1, num_parts+1):
+                filepath = download_dir \
+                        + DOWNLOAD_FILENAME_FORMAT.format(
+                            number=part)
+                tag = EasyID3(filepath)
+                for key in TAGS_TO_UPDATE:
+                    tag[key] = TAGS_TO_UPDATE[key]
+                tag.save()
+
 def _generate_hash(client_id):
     """Hash algorithm and secret complements of
     https://github.com/jvolkening/gloc/blob/v0.601/gloc#L1523-L1531"""
@@ -220,10 +234,13 @@ if __name__ == '__main__':
     parser.add_argument('filename')
     parser.add_argument(
             '-d', '--debug', action='store_true', help='print debug messages')
+    parser.add_argument(
+            '-t', '--tags', action='store_true',
+            help='Update ID3 tags according to configuration')
     args = parser.parse_args()
     log_level = logging.INFO
     if args.debug:
         log_level = logging.DEBUG
     _setup_logging(log_level)
     odm_filename = abspath(expanduser(args.filename))
-    download_audiobook(odm_filename)
+    download_audiobook(odm_filename, update_tags=args.tags)
