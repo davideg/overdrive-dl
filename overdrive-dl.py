@@ -2,10 +2,12 @@
 
 import argparse
 import base64
+import grp
 import hashlib
 import logging
 import math
 import os
+import pwd
 import re
 import sys
 import time
@@ -33,9 +35,11 @@ COVER_FILENAME_FORMAT = '{title}.jpg'
 LOWERCASE = True
 CHUNK_SIZE = 1024
 TAGS_TO_UPDATE = {'genre': 'Audiobook'}
+OWNER_USER = 'deg'
+OWNER_GROUP = 'media'
 
 
-def download_audiobook(odm_filename, update_tags=False):
+def download_audiobook(odm_filename, update_tags=False, update_owner=False):
     license = ''
     license_filepath = odm_filename + '.license'
     if not exists(license_filepath):
@@ -172,10 +176,35 @@ def download_audiobook(odm_filename, update_tags=False):
                 filepath = download_dir \
                         + DOWNLOAD_FILENAME_FORMAT.format(
                             number=part)
+                logging.debug('Updating tag for {}'.format(filepath))
                 tag = EasyID3(filepath)
                 for key in TAGS_TO_UPDATE:
                     tag[key] = TAGS_TO_UPDATE[key]
                 tag.save()
+
+        # Update Owner info
+        if update_owner and (OWNER_USER or OWNER_GROUP):
+            logging.info('Updating file owner info')
+            if OWNER_USER:
+                try:
+                    user_id = pwd.getpwnam(OWNER_USER).pw_uid
+                except KeyError:
+                    user_id = -1
+            else:
+                user_id = -1
+            if OWNER_GROUP:
+                try:
+                    group_id = grp.getgrnam(OWNER_GROUP).gr_gid
+                except KeyError:
+                    group_id = -1
+            else:
+                group_id = -1
+            for part in range(1, num_parts+1):
+                filepath = download_dir \
+                        + DOWNLOAD_FILENAME_FORMAT.format(
+                            number=part)
+                logging.debug('Updating ownership for {}'.format(filepath))
+                os.chown(filepath, user_id, group_id)
 
 def _generate_hash(client_id):
     """Hash algorithm and secret complements of
@@ -237,10 +266,16 @@ if __name__ == '__main__':
     parser.add_argument(
             '-t', '--tags', action='store_true',
             help='Update ID3 tags according to configuration')
+    parser.add_argument(
+            '-o', '--owner', action='store_true',
+            help='Update file ownership according to configuration')
     args = parser.parse_args()
     log_level = logging.INFO
     if args.debug:
         log_level = logging.DEBUG
     _setup_logging(log_level)
     odm_filename = abspath(expanduser(args.filename))
-    download_audiobook(odm_filename, update_tags=args.tags)
+    download_audiobook(
+            odm_filename,
+            update_tags=args.tags,
+            update_owner=args.owner)
