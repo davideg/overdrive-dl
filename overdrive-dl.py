@@ -115,8 +115,11 @@ def download_audiobook(odm_filename):
         'ClientID': client_id,
         'User-Agent': USER_AGENT
         }
+    logging.info('Downloading {} parts:'.format(num_parts))
     for part in parts:
-        logging.info('Downloading {}'.format(part.get('name')))
+        logging.info('Downloading {} of {}'.format(
+            part.get('name'),
+            num_parts))
         logging.debug('Filename: {}\nFilesize: {}\nDuration: {}'.format(
                 part.get('filename'),
                 part.get('filesize'),
