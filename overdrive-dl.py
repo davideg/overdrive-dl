@@ -169,42 +169,42 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
                 sys.stdout.flush()
                 # TODO look into using tqdm as progress bar
 
-        # Update ID3 tags
-        if update_tags and TAGS_TO_UPDATE:
-            logging.info('Updating ID3 tags')
-            for part in range(1, num_parts+1):
-                filepath = download_dir \
-                        + DOWNLOAD_FILENAME_FORMAT.format(
-                            number=part)
-                logging.debug('Updating tag for {}'.format(filepath))
-                tag = EasyID3(filepath)
-                for key in TAGS_TO_UPDATE:
-                    tag[key] = TAGS_TO_UPDATE[key]
-                tag.save()
+    # Update ID3 tags
+    if update_tags and TAGS_TO_UPDATE:
+        logging.info('Updating ID3 tags')
+        for part in range(1, num_parts+1):
+            filepath = download_dir \
+                    + DOWNLOAD_FILENAME_FORMAT.format(
+                        number=part)
+            logging.debug('Updating tag for {}'.format(filepath))
+            tag = EasyID3(filepath)
+            for key in TAGS_TO_UPDATE:
+                tag[key] = TAGS_TO_UPDATE[key]
+            tag.save()
 
-        # Update Owner info
-        if update_owner and (OWNER_USER or OWNER_GROUP):
-            logging.info('Updating file owner info')
-            if OWNER_USER:
-                try:
-                    user_id = pwd.getpwnam(OWNER_USER).pw_uid
-                except KeyError:
-                    user_id = -1
-            else:
+    # Update Owner info
+    if update_owner and (OWNER_USER or OWNER_GROUP):
+        logging.info('Updating file owner info')
+        if OWNER_USER:
+            try:
+                user_id = pwd.getpwnam(OWNER_USER).pw_uid
+            except KeyError:
                 user_id = -1
-            if OWNER_GROUP:
-                try:
-                    group_id = grp.getgrnam(OWNER_GROUP).gr_gid
-                except KeyError:
-                    group_id = -1
-            else:
+        else:
+            user_id = -1
+        if OWNER_GROUP:
+            try:
+                group_id = grp.getgrnam(OWNER_GROUP).gr_gid
+            except KeyError:
                 group_id = -1
-            for part in range(1, num_parts+1):
-                filepath = download_dir \
-                        + DOWNLOAD_FILENAME_FORMAT.format(
-                            number=part)
-                logging.debug('Updating ownership for {}'.format(filepath))
-                os.chown(filepath, user_id, group_id)
+        else:
+            group_id = -1
+        for part in range(1, num_parts+1):
+            filepath = download_dir \
+                    + DOWNLOAD_FILENAME_FORMAT.format(
+                        number=part)
+            logging.debug('Updating ownership for {}'.format(filepath))
+            os.chown(filepath, user_id, group_id)
 
 def _generate_hash(client_id):
     """Hash algorithm and secret complements of
