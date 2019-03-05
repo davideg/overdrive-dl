@@ -205,6 +205,12 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
                         number=part)
             logging.debug('Updating ownership for {}'.format(filepath))
             os.chown(filepath, user_id, group_id)
+        # Update owner info for cover
+        cover_path = download_dir + COVER_FILENAME_FORMAT.format(title=title)
+        if os.path.exists(cover_path):
+            logging.debug('Updating ownership for cover image: {}'.format(
+                cover_path))
+            os.chown(cover_path, user_id, group_id)
 
 def _generate_hash(client_id):
     """Hash algorithm and secret complements of
