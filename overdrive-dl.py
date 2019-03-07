@@ -274,7 +274,7 @@ def _setup_logging(level):
             level=level)
 
 def _die(msg):
-    logging.error(msg)
+    sys.stderr.write('ERROR: ' + msg + '\n')
     sys.exit(1)
 
 
