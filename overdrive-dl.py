@@ -38,44 +38,11 @@ TAGS_TO_UPDATE = {'genre': 'Audiobook'}
 OWNER_USER = 'deg'
 OWNER_GROUP = 'media'
 
-
 def download_audiobook(odm_filename, update_tags=False, update_owner=False):
-    license = ''
-    license_filepath = odm_filename + '.license'
-    if not exists(license_filepath):
-        license = acquire_license(odm_filename)
-        logging.debug('Writing to license file: {}'.format(license_filepath))
-        with open(license_filepath, 'w') as fd:
-            fd.write(license)
-    else:
-        logging.debug('Reading from license file: {}'.format(license_filepath))
-        with open(license_filepath, 'r') as fd:
-            license = fd.read()
-    if not license:
-        _die('Missing license content')
-    license_xml = ET.fromstring(license)
-    client_id = license_xml.findtext(
-            './{http://license.overdrive.com/2008/03/License.xsd}SignedInfo'
-            '/{http://license.overdrive.com/2008/03/License.xsd}ClientID')
-    if not client_id:
-        _die('Failed to extract ClientID from License')
-
-    odm_str = ''
-    with open(odm_filename, 'r') as fd:
-        odm_str = fd.read()
-
-    m = re.search(r'<Metadata>.*</Metadata>', odm_str, flags=re.S)
-    if not m:
-        _die('Could not find Metadata in {}'.format(odm_filename))
-    metadata = ET.fromstring(m.group(0))
-    author_elements = metadata.findall('.//Creator[@role="Author"]')
-    author = ';'.join([e.text for e in author_elements])
-    title = metadata.findtext('Title')
-    cover_url = metadata.findtext('CoverUrl', '')
-    
-    if LOWERCASE:
-        author = author.lower()
-        title = title.lower()
+    license, client_id = _get_license_and_client_id(odm_filename)
+    author, title, cover_url, base_url, parts = \
+            _extract_author_title_urls_parts(odm_filename)
+    num_parts = len(parts)
 
     download_dir = DOWNLOAD_DIR + DOWNLOAD_PATH_FORMAT.format(
             author=author,
@@ -101,21 +68,6 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
                 r.status_code))
     logging.debug('Using ClientID: {}'.format(client_id))
 
-    root = ET.fromstring(odm_str)
-    # Find the Protocol element with the URL for downloading
-    p = root.find('.//Protocol[@method="download"]')
-    url = p.get('baseurl', default='') if p is not None else ''
-    if not url:
-        _die('Trouble extracting URL from ODM file')
-
-    p = root.find('.//Parts')
-    num_parts = int(p.get('count', default=0)) if p is not None else 0
-    # Find all the parts to download
-    parts = root.findall('.//Part')
-    if len(parts) != num_parts:
-        _die('Bad ODM file: Expecting {} parts, but found {}'
-        'part records'.format(num_parts, len(parts)))
-
     headers = {
         'License': license,
         'ClientID': client_id,
@@ -130,7 +82,7 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
                 part.get('filename'),
                 part.get('filesize'),
                 part.get('duration')))
-        dl_url = url + '/' + part.get('filename')
+        dl_url = base_url + '/' + part.get('filename')
         filepath = download_dir \
                 + DOWNLOAD_FILENAME_FORMAT.format(
                         number=int(part.get('number')))
@@ -171,6 +123,47 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
 
     # Update ID3 tags
     if update_tags and TAGS_TO_UPDATE:
+        _update_tags(TAGS_TO_UPDATE, download_dir, num_parts)
+
+    # Update Owner info
+    if update_owner and (OWNER_USER or OWNER_GROUP):
+        _update_owner(OWNER_USER, OWNER_GROUP, download_dir, num_parts, title)
+
+def _extract_author_title_urls_parts(odm_filename):
+    odm_str = ''
+    with open(odm_filename, 'r') as fd:
+        odm_str = fd.read()
+
+    m = re.search(r'<Metadata>.*</Metadata>', odm_str, flags=re.S)
+    if not m:
+        _die('Could not find Metadata in {}'.format(odm_filename))
+    metadata = ET.fromstring(m.group(0))
+    author_elements = metadata.findall('.//Creator[@role="Author"]')
+    author = ';'.join([e.text for e in author_elements])
+    title = metadata.findtext('Title')
+    cover_url = metadata.findtext('CoverUrl', '')
+    
+    if LOWERCASE:
+        author = author.lower()
+        title = title.lower()
+
+    root = ET.fromstring(odm_str)
+    # Find the Protocol element with the URL for downloading
+    p = root.find('.//Protocol[@method="download"]')
+    base_url = p.get('baseurl', default='') if p is not None else ''
+    if not base_url:
+        _die('Trouble extracting URL from ODM file')
+
+    p = root.find('.//Parts')
+    num_parts = int(p.get('count', default=0)) if p is not None else 0
+    # Find all the parts to download
+    parts = root.findall('.//Part')
+    if len(parts) != num_parts:
+        _die('Bad ODM file: Expecting {} parts, but found {}'
+        'part records'.format(num_parts, len(parts)))
+    return (author, title, cover_url, base_url, parts)
+
+def _update_tags(tags_to_update, download_dir, num_parts):
         logging.info('Updating ID3 tags')
         for part in range(1, num_parts+1):
             filepath = download_dir \
@@ -178,39 +171,60 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
                         number=part)
             logging.debug('Updating tag for {}'.format(filepath))
             tag = EasyID3(filepath)
-            for key in TAGS_TO_UPDATE:
-                tag[key] = TAGS_TO_UPDATE[key]
+            for key in tags_to_update:
+                tag[key] = tags_to_update[key]
             tag.save()
 
-    # Update Owner info
-    if update_owner and (OWNER_USER or OWNER_GROUP):
-        logging.info('Updating file owner info')
-        if OWNER_USER:
-            try:
-                user_id = pwd.getpwnam(OWNER_USER).pw_uid
-            except KeyError:
-                user_id = -1
-        else:
+def _update_owner(user, group, download_dir, num_parts, title):
+    logging.info('Updating file owner info')
+    if user:
+        try:
+            user_id = pwd.getpwnam(user).pw_uid
+        except KeyError:
             user_id = -1
-        if OWNER_GROUP:
-            try:
-                group_id = grp.getgrnam(OWNER_GROUP).gr_gid
-            except KeyError:
-                group_id = -1
-        else:
+    else:
+        user_id = -1
+    if group:
+        try:
+            group_id = grp.getgrnam(group).gr_gid
+        except KeyError:
             group_id = -1
-        for part in range(1, num_parts+1):
-            filepath = download_dir \
-                    + DOWNLOAD_FILENAME_FORMAT.format(
-                        number=part)
-            logging.debug('Updating ownership for {}'.format(filepath))
-            os.chown(filepath, user_id, group_id)
-        # Update owner info for cover
-        cover_path = download_dir + COVER_FILENAME_FORMAT.format(title=title)
-        if os.path.exists(cover_path):
-            logging.debug('Updating ownership for cover image: {}'.format(
-                cover_path))
-            os.chown(cover_path, user_id, group_id)
+    else:
+        group_id = -1
+    for part in range(1, num_parts+1):
+        filepath = download_dir \
+                + DOWNLOAD_FILENAME_FORMAT.format(
+                    number=part)
+        logging.debug('Updating ownership for {}'.format(filepath))
+        os.chown(filepath, user_id, group_id)
+    # Update owner info for cover
+    cover_path = download_dir + COVER_FILENAME_FORMAT.format(title=title)
+    if os.path.exists(cover_path):
+        logging.debug('Updating ownership for cover image: {}'.format(
+            cover_path))
+        os.chown(cover_path, user_id, group_id)
+
+def _get_license_and_client_id(odm_filename):
+    license = ''
+    license_filepath = odm_filename + '.license'
+    if not exists(license_filepath):
+        license = acquire_license(odm_filename)
+        logging.debug('Writing to license file: {}'.format(license_filepath))
+        with open(license_filepath, 'w') as fd:
+            fd.write(license)
+    else:
+        logging.debug('Reading from license file: {}'.format(license_filepath))
+        with open(license_filepath, 'r') as fd:
+            license = fd.read()
+    if not license:
+        _die('Missing license content')
+    license_xml = ET.fromstring(license)
+    client_id = license_xml.findtext(
+            './{http://license.overdrive.com/2008/03/License.xsd}SignedInfo'
+            '/{http://license.overdrive.com/2008/03/License.xsd}ClientID')
+    if not client_id:
+        _die('Failed to extract ClientID from License')
+    return (license, client_id)
 
 def _generate_hash(client_id):
     """Hash algorithm and secret complements of
