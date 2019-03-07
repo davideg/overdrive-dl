@@ -44,10 +44,7 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
             _extract_author_title_urls_parts(odm_filename)
     num_parts = len(parts)
 
-    download_dir = DOWNLOAD_DIR + DOWNLOAD_PATH_FORMAT.format(
-            author=author,
-            title=title,
-            filename='')
+    download_dir = _construct_download_dir_path(author, title)
     logging.debug('Will save files to {}'.format(download_dir))
     if not exists(download_dir):
         logging.debug('Creating {}'.format(download_dir))
@@ -175,6 +172,13 @@ def _update_tags(tags_to_update, download_dir, num_parts):
                 tag[key] = tags_to_update[key]
             tag.save()
 
+def _update_tags_only(tags_to_update, odm_filename):
+    author, title, _, _, parts = \
+            _extract_author_title_urls_parts(odm_filename)
+    num_parts = len(parts)
+    download_dir = _construct_download_dir_path(author, title)
+    _update_tags(tags_to_update, download_dir, num_parts)
+
 def _update_owner(user, group, download_dir, num_parts, title):
     logging.info('Updating file owner info')
     if user:
@@ -203,6 +207,19 @@ def _update_owner(user, group, download_dir, num_parts, title):
         logging.debug('Updating ownership for cover image: {}'.format(
             cover_path))
         os.chown(cover_path, user_id, group_id)
+
+def _update_ownership_only(user, group, odm_filename):
+    author, title, _, _, parts = \
+            _extract_author_title_urls_parts(odm_filename)
+    num_parts = len(parts)
+    download_dir = _construct_download_dir_path(author, title)
+    _update_owner(user, group, download_dir, num_parts, title)
+
+def _construct_download_dir_path(author, title):
+    return DOWNLOAD_DIR + DOWNLOAD_PATH_FORMAT.format(
+            author=author,
+            title=title,
+            filename='')
 
 def _get_license_and_client_id(odm_filename):
     license = ''
@@ -289,13 +306,27 @@ if __name__ == '__main__':
     parser.add_argument(
             '-o', '--owner', action='store_true',
             help='Update file ownership according to configuration')
+    parser.add_argument(
+            '-s', '--skip-download', action='store_true',
+            help='Skip downloading files. This option is only valid'
+            ' when updating tags or ownership, in which case it is assumed'
+            ' the expected files already exist')
     args = parser.parse_args()
     log_level = logging.INFO
     if args.debug:
         log_level = logging.DEBUG
     _setup_logging(log_level)
     odm_filename = abspath(expanduser(args.filename))
-    download_audiobook(
-            odm_filename,
-            update_tags=args.tags,
-            update_owner=args.owner)
+    if args.skip_download and (args.tags + args.owner == 0):
+        _die('Must include \'--tags\' or \'--owner options\''
+                ' when specifying \'--skip-download\'')
+    if args.skip_download:
+        if args.tags:
+            _update_tags_only(TAGS_TO_UPDATE, odm_filename)
+        if args.owner:
+            _update_ownership_only(OWNER_USER, OWNER_GROUP, odm_filename)
+    else:
+        download_audiobook(
+                odm_filename,
+                update_tags=args.tags,
+                update_owner=args.owner)
