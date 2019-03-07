@@ -173,10 +173,10 @@ def _update_tags(tags_to_update, download_dir, num_parts):
             tag.save()
 
 def _update_tags_only(tags_to_update, odm_filename):
-    author, title, _, _, parts = \
-            _extract_author_title_urls_parts(odm_filename)
+    author, title, _, _, parts = _extract_author_title_urls_parts(odm_filename)
     num_parts = len(parts)
     download_dir = _construct_download_dir_path(author, title)
+    _die_if_missing_files(download_dir, num_parts)
     _update_tags(tags_to_update, download_dir, num_parts)
 
 def _update_owner(user, group, download_dir, num_parts, title):
@@ -196,23 +196,21 @@ def _update_owner(user, group, download_dir, num_parts, title):
     else:
         group_id = -1
     for part in range(1, num_parts+1):
-        filepath = download_dir \
-                + DOWNLOAD_FILENAME_FORMAT.format(
-                    number=part)
-        logging.debug('Updating ownership for {}'.format(filepath))
+        filepath = download_dir + DOWNLOAD_FILENAME_FORMAT.format(number=part)
+        logging.debug('Updating owner for {}'.format(filepath))
         os.chown(filepath, user_id, group_id)
     # Update owner info for cover
     cover_path = download_dir + COVER_FILENAME_FORMAT.format(title=title)
     if os.path.exists(cover_path):
-        logging.debug('Updating ownership for cover image: {}'.format(
+        logging.debug('Updating owner for cover image: {}'.format(
             cover_path))
         os.chown(cover_path, user_id, group_id)
 
-def _update_ownership_only(user, group, odm_filename):
-    author, title, _, _, parts = \
-            _extract_author_title_urls_parts(odm_filename)
+def _update_owner_only(user, group, odm_filename):
+    author, title, _, _, parts = _extract_author_title_urls_parts(odm_filename)
     num_parts = len(parts)
     download_dir = _construct_download_dir_path(author, title)
+    _die_if_missing_files(download_dir, num_parts)
     _update_owner(user, group, download_dir, num_parts, title)
 
 def _construct_download_dir_path(author, title):
@@ -220,6 +218,12 @@ def _construct_download_dir_path(author, title):
             author=author,
             title=title,
             filename='')
+
+def _die_if_missing_files(dir_path, num_parts):
+    for part in range(1, num_parts+1):
+        filepath = dir_path + DOWNLOAD_FILENAME_FORMAT.format(number=part)
+        if not exists(filepath):
+            _die('Expected file "{}" does not exist'.format(filepath))
 
 def _get_license_and_client_id(odm_filename):
     license = ''
@@ -305,11 +309,11 @@ if __name__ == '__main__':
             help='Update ID3 tags according to configuration')
     parser.add_argument(
             '-o', '--owner', action='store_true',
-            help='Update file ownership according to configuration')
+            help='Update file owner according to configuration')
     parser.add_argument(
             '-s', '--skip-download', action='store_true',
             help='Skip downloading files. This option is only valid'
-            ' when updating tags or ownership, in which case it is assumed'
+            ' when updating tags or owner, in which case it is assumed'
             ' the expected files already exist')
     args = parser.parse_args()
     log_level = logging.INFO
@@ -324,7 +328,7 @@ if __name__ == '__main__':
         if args.tags:
             _update_tags_only(TAGS_TO_UPDATE, odm_filename)
         if args.owner:
-            _update_ownership_only(OWNER_USER, OWNER_GROUP, odm_filename)
+            _update_owner_only(OWNER_USER, OWNER_GROUP, odm_filename)
     else:
         download_audiobook(
                 odm_filename,
