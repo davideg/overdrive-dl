@@ -50,6 +50,9 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
         logging.debug('Creating {}'.format(download_dir))
         os.makedirs(download_dir, exist_ok=True)
 
+    logging.info('Downloading "{}" by {}'.format(
+        title,
+        ', '.join(author.split(';'))))
     logging.debug('Downloading using ODM file: {}'.format(odm_filename))
     if cover_url:
         logging.debug('Downloading cover image: {}'.format(cover_url))
