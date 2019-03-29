@@ -137,6 +137,10 @@ def _extract_author_title_urls_parts(odm_filename):
     metadata = ET.fromstring(m.group(0))
     author_elements = metadata.findall('.//Creator[@role="Author"]')
     author = ';'.join([e.text for e in author_elements])
+    # Use editors if there are no authors
+    if author == '':
+        author_elements = metadata.findall('.//Creator[@role="Editor"]')
+        author = ';'.join([e.text for e in author_elements])
     title = metadata.findtext('Title')
     cover_url = metadata.findtext('CoverUrl', '')
     
