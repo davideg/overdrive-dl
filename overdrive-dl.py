@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-from os.path import abspath, exists, expanduser
+from os.path import abspath, basename, expanduser, isdir, isfile, normpath
 from mutagen.easyid3 import EasyID3
 
 USER_AGENT = 'OverDrive Media Console'
@@ -39,6 +39,7 @@ OWNER_USER = 'deg'
 OWNER_GROUP = 'media'
 
 def download_audiobook(odm_filename, update_tags=False, update_owner=False):
+    _verify_odm_file(odm_filename)
     license, client_id = _get_license_and_client_id(odm_filename)
     author, title, cover_url, base_url, parts = \
             _extract_author_title_urls_parts(odm_filename)
@@ -46,7 +47,7 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
 
     download_dir = _construct_download_dir_path(author, title)
     logging.debug('Will save files to {}'.format(download_dir))
-    if not exists(download_dir):
+    if not isdir(download_dir):
         logging.debug('Creating {}'.format(download_dir))
         os.makedirs(download_dir, exist_ok=True)
 
@@ -180,6 +181,7 @@ def _update_tags(tags_to_update, download_dir, num_parts):
             tag.save()
 
 def _update_tags_only(tags_to_update, odm_filename):
+    _verify_odm_file(odm_filename)
     author, title, _, _, parts = _extract_author_title_urls_parts(odm_filename)
     num_parts = len(parts)
     download_dir = _construct_download_dir_path(author, title)
@@ -208,12 +210,13 @@ def _update_owner(user, group, download_dir, num_parts, title):
         os.chown(filepath, user_id, group_id)
     # Update owner info for cover
     cover_path = download_dir + COVER_FILENAME_FORMAT.format(title=title)
-    if os.path.exists(cover_path):
+    if os.path.isdir(cover_path):
         logging.debug('Updating owner for cover image: {}'.format(
             cover_path))
         os.chown(cover_path, user_id, group_id)
 
 def _update_owner_only(user, group, odm_filename):
+    _verify_odm_file(odm_filename)
     author, title, _, _, parts = _extract_author_title_urls_parts(odm_filename)
     num_parts = len(parts)
     download_dir = _construct_download_dir_path(author, title)
@@ -229,13 +232,27 @@ def _construct_download_dir_path(author, title):
 def _die_if_missing_files(dir_path, num_parts):
     for part in range(1, num_parts+1):
         filepath = dir_path + DOWNLOAD_FILENAME_FORMAT.format(number=part)
-        if not exists(filepath):
+        if not isfile(filepath):
             _die('Expected file "{}" does not exist'.format(filepath))
+
+def _verify_odm_file(odm_filename):
+    if isfile(odm_filename):
+        with open(odm_filename, 'r') as f:
+            if not re.search(r'<OverDriveMedia', f.read(100)):
+                _die('Expected ODM file. Specified file "{}"'
+                        ' is not in the correct OverDriveMedia'
+                        ' format'.format(basename(odm_filename)))
+    elif isdir(odm_filename):
+        _die('Expected ODM file. Given directory: {}'.format(
+            basename(normpath(odm_filename))))
+    else:
+        _die('Expected ODM file. Specified file "{}"'
+                ' does not exist'.format(basename(normpath(odm_filename))))
 
 def _get_license_and_client_id(odm_filename):
     license = ''
     license_filepath = odm_filename + '.license'
-    if not exists(license_filepath):
+    if not isfile(license_filepath):
         license = acquire_license(odm_filename)
         logging.debug('Writing to license file: {}'.format(license_filepath))
         with open(license_filepath, 'w') as fd:
@@ -270,7 +287,7 @@ def acquire_license(odm_filename):
     logging.debug('Using MediaID: {}'.format(media_id))
 
     client_id = ''
-    if not exists(CLIENT_ID_PATH):
+    if not isfile(CLIENT_ID_PATH):
         # Generate random Client ID
         client_id = str(uuid.uuid4()).upper()
         with open(CLIENT_ID_PATH, 'w') as fd:
