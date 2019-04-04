@@ -238,6 +238,7 @@ def _die_if_missing_files(dir_path, num_parts):
             _die('Expected file "{}" does not exist'.format(filepath))
 
 def _verify_odm_file(odm_filename):
+    logging.debug('Attempting to verify ODM file "{}"'.format(odm_filename))
     if isfile(odm_filename):
         with open(odm_filename, 'r') as f:
             if not re.search(r'<OverDriveMedia', f.read(100)):
