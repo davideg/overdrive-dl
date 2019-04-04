@@ -51,9 +51,6 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
         logging.debug('Creating {}'.format(download_dir))
         os.makedirs(download_dir, exist_ok=True)
 
-    logging.info('Downloading "{}" by {}'.format(
-        title,
-        ', '.join(author.split(';'))))
     logging.debug('Downloading using ODM file: {}'.format(odm_filename))
     if cover_url:
         logging.debug('Downloading cover image: {}'.format(cover_url))
@@ -147,6 +144,11 @@ def _extract_author_title_urls_parts(odm_filename):
         author = ';'.join([e.text for e in author_elements])
     title = metadata.findtext('Title')
     cover_url = metadata.findtext('CoverUrl', '')
+    logging.info('Got title "{}" and author'.format(title)
+                 + ('s' if ';' in author else '')
+                 + ' {} from ODM file {}'.format(
+                     ', '.join(author.split(';')),
+                     basename(odm_filename)))
     
     if LOWERCASE:
         author = author.lower()
