@@ -16,8 +16,15 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-from os.path import abspath, basename, dirname, expanduser, isdir, isfile, normpath
+from os.path import (abspath, basename, dirname, expanduser, isdir, isfile,
+        normpath, sep)
 from mutagen.easyid3 import EasyID3
+
+CONFIG_FILE = 'config.toml'
+config = {'download_dir': '~/Documents/audiobooks/',
+        'filenames_lowercase': True,
+        'tags': {'genre': 'Audiobook'},
+        'owner': {'user': 'deg', 'group': 'media'}}
 
 USER_AGENT = 'OverDrive Media Console'
 USER_AGENT_LONG = 'OverDrive Media Console (unknown version)' \
@@ -27,16 +34,11 @@ OS = '10.14.2'
 HASH_SECRET = 'ELOSNOC*AIDEM*EVIRDREVO'
 CLIENT_ID_PATH = expanduser('~/.overdrive-dl.clientid')
 
-# TODO: make into config file options
-DOWNLOAD_DIR = expanduser('~/Documents/audiobooks/')
+# TODO: make path format into config file option
 DOWNLOAD_PATH_FORMAT = '{author}/{title}/{filename}'
 DOWNLOAD_FILENAME_FORMAT = 'part{number:02d}.mp3'
 COVER_FILENAME_FORMAT = '{title}.jpg'
-LOWERCASE = True
 CHUNK_SIZE = 1024
-TAGS_TO_UPDATE = {'genre': 'Audiobook'}
-OWNER_USER = 'deg'
-OWNER_GROUP = 'media'
 
 def download_audiobook(odm_filename, update_tags=False, update_owner=False):
     _verify_odm_file(odm_filename)
@@ -54,7 +56,8 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
     logging.debug('Downloading using ODM file: {}'.format(odm_filename))
     if cover_url:
         logging.debug('Downloading cover image: {}'.format(cover_url))
-        cover_path = download_dir + COVER_FILENAME_FORMAT.format(title=title)
+        cover_path = download_dir + sep \
+                + COVER_FILENAME_FORMAT.format(title=title)
         headers = {'User-Agent': USER_AGENT_LONG}
         r = requests.get(cover_url, headers=headers)
         if r.status_code == 200:
@@ -82,6 +85,7 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
                 part.get('duration')))
         dl_url = base_url + '/' + part.get('filename')
         filepath = download_dir \
+                + sep \
                 + DOWNLOAD_FILENAME_FORMAT.format(
                         number=int(part.get('number')))
         r = requests.get(dl_url, headers=headers, stream=True)
@@ -120,12 +124,16 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
                 # TODO look into using tqdm as progress bar
 
     # Update ID3 tags
-    if update_tags and TAGS_TO_UPDATE:
-        _update_tags(TAGS_TO_UPDATE, download_dir, num_parts)
+    if update_tags and 'tags' in config:
+        _update_tags(config['tags'], download_dir, num_parts)
 
     # Update Owner info
-    if update_owner and (OWNER_USER or OWNER_GROUP):
-        _update_owner(OWNER_USER, OWNER_GROUP, download_dir, num_parts, title)
+    if update_owner and 'owner' in config:
+        _update_owner(config['owner'].get('user'),
+                config['owner'].get('group'),
+                download_dir,
+                num_parts,
+                title)
 
 def _extract_author_title_urls_parts(odm_filename):
     odm_str = ''
@@ -150,7 +158,7 @@ def _extract_author_title_urls_parts(odm_filename):
                      ', '.join(author.split(';')),
                      basename(odm_filename)))
     
-    if LOWERCASE:
+    if config['filenames_lowercase']:
         author = author.lower()
         title = title.lower()
 
@@ -174,6 +182,7 @@ def _update_tags(tags_to_update, download_dir, num_parts):
         logging.info('Updating ID3 tags')
         for part in range(1, num_parts+1):
             filepath = download_dir \
+                    + sep \
                     + DOWNLOAD_FILENAME_FORMAT.format(
                         number=part)
             logging.debug('Updating tag for {}'.format(filepath))
@@ -207,7 +216,7 @@ def _update_owner(user, group, download_dir, num_parts, title):
     else:
         group_id = -1
     # Update owner for author directory
-    author_dir = dirname(normpath((download_dir)))
+    author_dir = dirname(download_dir)
     logging.debug('Updating owner for {}'.format(author_dir))
     os.chown(author_dir, user_id, group_id)
     # Update owner for title directory
@@ -215,11 +224,15 @@ def _update_owner(user, group, download_dir, num_parts, title):
     os.chown(download_dir, user_id, group_id)
     # Update owner for audiobook files
     for part in range(1, num_parts+1):
-        filepath = download_dir + DOWNLOAD_FILENAME_FORMAT.format(number=part)
+        filepath = download_dir \
+                + sep \
+                + DOWNLOAD_FILENAME_FORMAT.format(number=part)
         logging.debug('Updating owner for {}'.format(filepath))
         os.chown(filepath, user_id, group_id)
     # Update owner info for cover
-    cover_path = download_dir + COVER_FILENAME_FORMAT.format(title=title)
+    cover_path = download_dir \
+            + sep \
+            + COVER_FILENAME_FORMAT.format(title=title)
     if os.path.isfile(cover_path):
         logging.debug('Updating owner for cover image: {}'.format(
             cover_path))
@@ -234,14 +247,21 @@ def _update_owner_only(user, group, odm_filename):
     _update_owner(user, group, download_dir, num_parts, title)
 
 def _construct_download_dir_path(author, title):
-    return DOWNLOAD_DIR + DOWNLOAD_PATH_FORMAT.format(
-            author=author,
-            title=title,
-            filename='')
+    return abspath(expanduser(config['download_dir'])) \
+            + sep \
+            + DOWNLOAD_PATH_FORMAT.format(
+                    author=author,
+                    title=title,
+                    filename='')
 
 def _die_if_missing_files(dir_path, num_parts):
+    if not isdir(dir_path):
+        _die('Expected to find directory "{}",'
+                ' but it does not exist'.format(dir_path))
     for part in range(1, num_parts+1):
-        filepath = dir_path + DOWNLOAD_FILENAME_FORMAT.format(number=part)
+        filepath = normpath(dir_path) \
+                + sep \
+                + DOWNLOAD_FILENAME_FORMAT.format(number=part)
         if not isfile(filepath):
             _die('Expected file "{}" does not exist'.format(filepath))
 
@@ -255,10 +275,10 @@ def _verify_odm_file(odm_filename):
                         ' format'.format(basename(odm_filename)))
     elif isdir(odm_filename):
         _die('Expected ODM file. Given directory: {}'.format(
-            basename(normpath(odm_filename))))
+            basename(odm_filename)))
     else:
         _die('Expected ODM file. Specified file "{}"'
-                ' does not exist'.format(basename(normpath(odm_filename))))
+                ' does not exist'.format(basename(odm_filename)))
 
 def _get_license_and_client_id(odm_filename):
     license = ''
@@ -323,6 +343,19 @@ def acquire_license(odm_filename):
         return r.text
     else:
         _die('Failed to acquire License for {}'.format(odm_filename))
+
+def _load_config(config_file):
+    global config
+    try:
+        import toml
+        if isfile(config_file):
+            config = toml.load(config_file)
+        else:
+            logging.warning('No configuration file "{}" found.' \
+                    ' Using hard-coded defaults.'.format(config_file))
+    except ModuleNotFoundError:
+        logging.warning('Python TOML library not installed so configuration' 
+                ' files will not work. Check out https://github.com/uiri/toml')
     
 def _setup_logging(level):
     logging.basicConfig(
@@ -350,6 +383,11 @@ if __name__ == '__main__':
             help='Skip downloading files. This option is only valid'
             ' when updating tags or owner, in which case it is assumed'
             ' the expected files already exist')
+    parser.add_argument(
+            '-c', '--config', help='Specify configuration file in TOML format'
+            ' (see https://github.com/toml-lang/toml).'
+            ' Without specifying this flag, %(prog)s will look for'
+            ' file named config.toml to read configuration')
     args = parser.parse_args()
     log_level = logging.INFO
     if args.debug:
@@ -357,13 +395,26 @@ if __name__ == '__main__':
     _setup_logging(log_level)
     odm_filename = abspath(expanduser(args.filename))
     if args.skip_download and (args.tags + args.owner == 0):
-        _die('Must include \'--tags\' or \'--owner options\''
+        _die('Must include \'--tags\' or \'--owner\' options'
                 ' when specifying \'--skip-download\'')
+    config_file = args.config if args.config else CONFIG_FILE
+    # modifies global config variable with configuration from file
+    _load_config(config_file)
     if args.skip_download:
-        if args.tags:
-            _update_tags_only(TAGS_TO_UPDATE, odm_filename)
-        if args.owner:
-            _update_owner_only(OWNER_USER, OWNER_GROUP, odm_filename)
+        if args.tags and 'tags' not in config:
+            logging.error('Specified \'--skip-download\' and \'--tags\''
+                    ' but no tags have been specified in the configuration'
+                    ' file {}'.format(config_file))
+        if args.owner and 'owner' not in config:
+            logging.error('Specified \'--skip-download\' and \'--owner\''
+                    ' but no owner information has been specified in the'
+                    ' configuration file {}'.format(config_file))
+        if args.tags and 'tags' in config:
+                _update_tags_only(config['tags'], odm_filename)
+        if args.owner and 'owner' in config:
+            _update_owner_only(config['owner'].get('user'),
+                    config['owner'].get('group'),
+                    odm_filename)
     else:
         download_audiobook(
                 odm_filename,

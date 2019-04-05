@@ -1,0 +1,9 @@
+download_dir = "~/Downloads/audiobooks/"
+filenames_lowercase = true
+
+[tags]
+genre = "Audiobook"
+
+[owner]
+user = "bob"
+group = "media"
