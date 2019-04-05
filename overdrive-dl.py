@@ -17,10 +17,10 @@ import xml.etree.ElementTree as ET
 import requests
 
 from os.path import (abspath, basename, dirname, expanduser, isdir, isfile,
-        normpath, sep)
+        join, normpath, realpath, sep)
 from mutagen.easyid3 import EasyID3
 
-CONFIG_FILE = 'config.toml'
+CONFIG_FILE = join(dirname(realpath(__file__)), 'config.toml')
 config = {'download_dir': '~/Documents/audiobooks/',
         'filenames_lowercase': True,
         'tags': {'genre': 'Audiobook'},
