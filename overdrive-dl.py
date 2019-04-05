@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-from os.path import abspath, basename, expanduser, isdir, isfile, normpath
+from os.path import abspath, basename, dirname, expanduser, isdir, isfile, normpath
 from mutagen.easyid3 import EasyID3
 
 USER_AGENT = 'OverDrive Media Console'
@@ -206,6 +206,14 @@ def _update_owner(user, group, download_dir, num_parts, title):
             group_id = -1
     else:
         group_id = -1
+    # Update owner for author directory
+    author_dir = dirname(normpath((download_dir)))
+    logging.debug('Updating owner for {}'.format(author_dir))
+    os.chown(author_dir, user_id, group_id)
+    # Update owner for title directory
+    logging.debug('Updating owner for {}'.format(download_dir))
+    os.chown(download_dir, user_id, group_id)
+    # Update owner for audiobook files
     for part in range(1, num_parts+1):
         filepath = download_dir + DOWNLOAD_FILENAME_FORMAT.format(number=part)
         logging.debug('Updating owner for {}'.format(filepath))
