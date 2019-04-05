@@ -212,7 +212,7 @@ def _update_owner(user, group, download_dir, num_parts, title):
         os.chown(filepath, user_id, group_id)
     # Update owner info for cover
     cover_path = download_dir + COVER_FILENAME_FORMAT.format(title=title)
-    if os.path.isdir(cover_path):
+    if os.path.isfile(cover_path):
         logging.debug('Updating owner for cover image: {}'.format(
             cover_path))
         os.chown(cover_path, user_id, group_id)
