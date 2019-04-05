@@ -247,12 +247,12 @@ def _update_owner_only(user, group, odm_filename):
     _update_owner(user, group, download_dir, num_parts, title)
 
 def _construct_download_dir_path(author, title):
-    return abspath(expanduser(config['download_dir'])) \
-            + sep \
+    return abspath(expanduser(config['download_dir'])
+            + sep
             + DOWNLOAD_PATH_FORMAT.format(
                     author=author,
                     title=title,
-                    filename='')
+                    filename=''))
 
 def _die_if_missing_files(dir_path, num_parts):
     if not isdir(dir_path):
