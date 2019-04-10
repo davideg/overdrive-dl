@@ -40,6 +40,19 @@ DOWNLOAD_FILENAME_FORMAT = 'part{number:02d}.mp3'
 COVER_FILENAME_FORMAT = '{title}.jpg'
 CHUNK_SIZE = 1024
 
+
+def print_metadata(odm_filename):
+    _verify_odm_file(odm_filename)
+    author, title, content_type, publisher, \
+            subjects, language, description, \
+            expiration_date, num_parts = _extract_metadata(odm_filename)
+    logging.info('Printing Metadata from ODM file {}'.format(odm_filename))
+    print('Content Type: {}\nExpiration Date: {}\nNumber of Parts: {}\n'
+            'Title: {}\nAuthor: {}\nPublisher: {}\n'
+            'Subjects: {}\nLanguage: {}\nDescription: {}'.format(
+                content_type, expiration_date, num_parts, title, author,
+                publisher, subjects, language, description))
+
 def download_audiobook(
         odm_filename,
         update_tags=False,
@@ -161,6 +174,38 @@ def _download_cover_image(cover_url, cover_path):
     else:
         logging.debug('Could not download cover. Status code: {}'.format(
             r.status_code))
+
+def _extract_metadata(odm_filename):
+    odm_str = ''
+    with open(odm_filename, 'r') as fd:
+        odm_str = fd.read()
+
+    m = re.search(r'<Metadata>.*</Metadata>', odm_str, flags=re.S)
+    if not m:
+        _die('Could not find Metadata in {}'.format(odm_filename))
+    metadata = ET.fromstring(m.group(0))
+    author_elements = metadata.findall('.//Creator[@role="Author"]')
+    author = ';'.join([e.text for e in author_elements])
+    # Use editors if there are no authors
+    if author == '':
+        author_elements = metadata.findall('.//Creator[@role="Editor"]')
+        author = ', '.join([e.text for e in author_elements])
+    title = metadata.findtext('Title')
+    content_type = metadata.findtext('ContentType')
+    publisher = metadata.findtext('Publisher')
+    subject_elements = metadata.findall('.//Subject')
+    subjects = ', '.join([e.text for e in subject_elements])
+    language_elements = metadata.findall('.//Language')
+    language = ', '.join([e.text for e in language_elements])
+    description = metadata.findtext('Description')
+    description = re.sub('<br>', '\n', description)
+
+    root = ET.fromstring(odm_str)
+    expiration_date = root.findtext('.//ExpirationDate')
+    p = root.find('.//Parts')
+    num_parts = int(p.get('count', default=0)) if p is not None else 0
+    return (author, title, content_type, publisher, subjects,
+            language, description, expiration_date, num_parts)
 
 def _extract_author_title_urls_parts(odm_filename):
     odm_str = ''
@@ -430,18 +475,27 @@ if __name__ == '__main__':
             ' (see https://github.com/toml-lang/toml).'
             ' Without specifying this flag, %(prog)s will look for'
             ' file named config.toml to read configuration')
+    parser.add_argument(
+            '-m', '--print-metadata', action='store_true',
+            help='Print metadata from specified ODM file and exit')
     args = parser.parse_args()
     log_level = logging.INFO
     if args.debug:
         log_level = logging.DEBUG
     _setup_logging(log_level)
     odm_filename = abspath(expanduser(args.filename))
+    if args.print_metadata \
+            and (args.tags + args.owner + args.skip_download + args.force) > 0:
+        _die('\'--print-metadata\' should be specified without other options')
     if args.skip_download and (args.tags + args.owner == 0):
         _die('Must include \'--tags\' or \'--owner\' options'
                 ' when specifying \'--skip-download\'')
     config_file = args.config if args.config else CONFIG_FILE
     # modifies global config variable with configuration from file
     _load_config(config_file)
+    if args.print_metadata:
+        print_metadata(odm_filename)
+        sys.exit(0)
     if args.skip_download:
         if args.tags and 'tags' not in config:
             logging.error('Specified \'--skip-download\' and \'--tags\''
