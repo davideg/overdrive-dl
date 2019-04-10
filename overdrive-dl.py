@@ -62,18 +62,15 @@ def download_audiobook(
         logging.debug('Downloading cover image: {}'.format(cover_url))
         cover_path = download_dir + sep \
                 + COVER_FILENAME_FORMAT.format(title=title)
-        if not _file_exists(cover_path) or force_download:
-            headers = {'User-Agent': USER_AGENT_LONG}
-            r = requests.get(cover_url, headers=headers)
-            if r.status_code == 200:
-                with open(cover_path, 'wb') as fd:
-                    logging.debug('Saving as {}'.format(cover_path))
-                    fd.write(r.content)
+        if _file_exists(cover_path):
+            logging.info('Cover image {} already exists'.format(cover_path))
+            if force_download:
+                logging.info('Overwriting cover image {}'.format(cover_path))
+                _download_cover_image(cover_url, cover_path)
             else:
-                logging.debug('Could not download cover. Status code: {}'.format(
-                    r.status_code))
+                logging.debug('Skipping downloading cover image')
         else:
-            logging.debug('Skipping downloading cover image')
+            _download_cover_image(cover_url, cover_path)
     logging.debug('Using ClientID: {}'.format(client_id))
 
     headers = {
@@ -153,6 +150,17 @@ def download_audiobook(
                 download_dir,
                 num_parts,
                 title)
+
+def _download_cover_image(cover_url, cover_path):
+    headers = {'User-Agent': USER_AGENT_LONG}
+    r = requests.get(cover_url, headers=headers)
+    if r.status_code == 200:
+        with open(cover_path, 'wb') as fd:
+            logging.debug('Saving as {}'.format(cover_path))
+            fd.write(r.content)
+    else:
+        logging.debug('Could not download cover. Status code: {}'.format(
+            r.status_code))
 
 def _extract_author_title_urls_parts(odm_filename):
     odm_str = ''
@@ -277,8 +285,11 @@ def _file_exists(file_path, expected_size_bytes=None):
     does_file_exist = isfile(file_path) \
             and (expected_size_bytes is None
                     or getsize(file_path) == expected_size_bytes)
-    logging.debug('File \"{}\" exists with size {} bytes? {}'.format(
-        file_path, expected_size_bytes, does_file_exist))
+    logging.debug('File \"{}\" exists'.format(file_path) \
+            + (' with size {} bytes?'.format(expected_size_bytes)
+            if expected_size_bytes
+            else '?') \
+            + ' {}'.format(does_file_exist))
     return does_file_exist
 
 def _die_if_missing_files(dir_path, num_parts):
