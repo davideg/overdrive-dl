@@ -16,8 +16,8 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-from os.path import (abspath, basename, dirname, expanduser, isdir, isfile,
-        join, normpath, realpath, sep)
+from os.path import (abspath, basename, dirname, expanduser, getsize, isdir,
+        isfile, join, normpath, realpath, sep)
 from mutagen.easyid3 import EasyID3
 
 CONFIG_FILE = join(dirname(realpath(__file__)), 'config.toml')
@@ -40,7 +40,11 @@ DOWNLOAD_FILENAME_FORMAT = 'part{number:02d}.mp3'
 COVER_FILENAME_FORMAT = '{title}.jpg'
 CHUNK_SIZE = 1024
 
-def download_audiobook(odm_filename, update_tags=False, update_owner=False):
+def download_audiobook(
+        odm_filename,
+        update_tags=False,
+        update_owner=False,
+        force_download=False):
     _verify_odm_file(odm_filename)
     license, client_id = _get_license_and_client_id(odm_filename)
     author, title, cover_url, base_url, parts = \
@@ -58,15 +62,18 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
         logging.debug('Downloading cover image: {}'.format(cover_url))
         cover_path = download_dir + sep \
                 + COVER_FILENAME_FORMAT.format(title=title)
-        headers = {'User-Agent': USER_AGENT_LONG}
-        r = requests.get(cover_url, headers=headers)
-        if r.status_code == 200:
-            with open(cover_path, 'wb') as fd:
-                logging.debug('Saving as {}'.format(cover_path))
-                fd.write(r.content)
+        if not _file_exists(cover_path) or force_download:
+            headers = {'User-Agent': USER_AGENT_LONG}
+            r = requests.get(cover_url, headers=headers)
+            if r.status_code == 200:
+                with open(cover_path, 'wb') as fd:
+                    logging.debug('Saving as {}'.format(cover_path))
+                    fd.write(r.content)
+            else:
+                logging.debug('Could not download cover. Status code: {}'.format(
+                    r.status_code))
         else:
-            logging.debug('Could not download cover. Status code: {}'.format(
-                r.status_code))
+            logging.debug('Skipping downloading cover image')
     logging.debug('Using ClientID: {}'.format(client_id))
 
     headers = {
@@ -88,6 +95,18 @@ def download_audiobook(odm_filename, update_tags=False, update_owner=False):
                 + sep \
                 + DOWNLOAD_FILENAME_FORMAT.format(
                         number=int(part.get('number')))
+        filesize = int(part.get('filesize'))
+        if _file_exists(filepath, filesize):
+            logging.info('{} already exists'.format(part.get('name')) \
+                    + ' with expected size' \
+                    + ' {:.2f}MB: {}'.format(filesize/(1024.0*1024.0), filepath))
+            if not force_download:
+                logging.info('Skipping downloading {}'.format(
+                    part.get('name')))
+                continue
+            else:
+                logging.info('Overwriting file {}'.format(filepath))
+
         r = requests.get(dl_url, headers=headers, stream=True)
         total_bytes = int(r.headers.get('content-length'))
         expected_iterations = int(math.ceil(total_bytes / CHUNK_SIZE))
@@ -254,6 +273,14 @@ def _construct_download_dir_path(author, title):
                     title=title,
                     filename=''))
 
+def _file_exists(file_path, expected_size_bytes=None):
+    does_file_exist = isfile(file_path) \
+            and (expected_size_bytes is None
+                    or getsize(file_path) == expected_size_bytes)
+    logging.debug('File \"{}\" exists with size {} bytes? {}'.format(
+        file_path, expected_size_bytes, does_file_exist))
+    return does_file_exist
+
 def _die_if_missing_files(dir_path, num_parts):
     if not isdir(dir_path):
         _die('Expected to find directory "{}",'
@@ -384,6 +411,10 @@ if __name__ == '__main__':
             ' when updating tags or owner, in which case it is assumed'
             ' the expected files already exist')
     parser.add_argument(
+            '-f', '--force', action='store_true',
+            help='Ignore whether audiobook files already exist'
+            ' and download all files, replacing any existing files')
+    parser.add_argument(
             '-c', '--config', help='Specify configuration file in TOML format'
             ' (see https://github.com/toml-lang/toml).'
             ' Without specifying this flag, %(prog)s will look for'
@@ -419,4 +450,5 @@ if __name__ == '__main__':
         download_audiobook(
                 odm_filename,
                 update_tags=args.tags,
-                update_owner=args.owner)
+                update_owner=args.owner,
+                force_download=args.force)
