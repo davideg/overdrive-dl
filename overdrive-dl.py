@@ -53,13 +53,13 @@ def print_metadata(odm_filename):
     _verify_odm_file(odm_filename)
     author, title, content_type, publisher, \
             subjects, language, description, \
-            expiration_date, num_parts = _extract_metadata(odm_filename)
+            expiration_date, library, num_parts = _extract_metadata(odm_filename)
     logging.info('Printing Metadata from ODM file {}'.format(odm_filename))
-    print('Content Type: {}\nExpiration Date: {}\nNumber of Parts: {}\n'
-            'Title: {}\nAuthor: {}\nPublisher: {}\n'
+    print('Content Type: {}\nLibrary: {}\nExpiration Date: {}\n'
+            'Number of Parts: {}\nTitle: {}\nAuthor: {}\nPublisher: {}\n'
             'Subjects: {}\nLanguage: {}\nDescription: '.format(
-                content_type, expiration_date, num_parts, title, author,
-                publisher, subjects, language))
+                content_type, library, expiration_date, num_parts, title,
+                author, publisher, subjects, language))
     try:
         print_formatted_text(HTML(description))
     except ExpatError:
@@ -197,7 +197,7 @@ def _extract_metadata(odm_filename):
         _die('Could not find Metadata in {}'.format(odm_filename))
     metadata = ET.fromstring(m.group(0))
     author_elements = metadata.findall('.//Creator[@role="Author"]')
-    author = ';'.join([e.text for e in author_elements])
+    author = ', '.join([e.text for e in author_elements])
     # Use editors if there are no authors
     if author == '':
         author_elements = metadata.findall('.//Creator[@role="Editor"]')
@@ -210,20 +210,28 @@ def _extract_metadata(odm_filename):
     language_elements = metadata.findall('.//Language')
     language = ', '.join([e.text for e in language_elements])
     description = metadata.findtext('Description')
+    logging.debug('Pre-processed description: {}'.format(description))
     # convert line breaks to newlines
-    description = re.sub('<br>', '\n', description)
+    description = re.sub('<br>', '\n', description, flags=re.IGNORECASE)
     # convert first paragraph tag to nothing
-    description = re.sub('^<p>', '', description)
+    description = re.sub('^<p>', '', description, flags=re.IGNORECASE)
     # convert subsequent paragraph tags to newlines
-    description = re.sub('<p>', '\n', description)
-    description = re.sub(r'</p>', '', description)
+    description = re.sub('<p>', '\n', description, flags=re.IGNORECASE)
+    # swallow closing tags and list tags
+    description = re.sub(r'</p>', '', description, flags=re.IGNORECASE)
+    description = re.sub(r'<ul>', '', description, flags=re.IGNORECASE)
+    description = re.sub(r'</ul>', '', description, flags=re.IGNORECASE)
+    # convert list items to use asteriks
+    description = re.sub(r'<li>', '\n* ', description, flags=re.IGNORECASE)
+    description = re.sub(r'</li>', '', description, flags=re.IGNORECASE)
 
     root = ET.fromstring(odm_str)
     expiration_date = root.findtext('.//ExpirationDate')
+    library = root.findtext('.//Source/Name')
     p = root.find('.//Parts')
     num_parts = int(p.get('count', default=0)) if p is not None else 0
     return (author, title, content_type, publisher, subjects,
-            language, description, expiration_date, num_parts)
+            language, description, expiration_date, library, num_parts)
 
 def _extract_author_title_urls_parts(odm_filename):
     odm_str = ''
