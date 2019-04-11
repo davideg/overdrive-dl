@@ -13,12 +13,20 @@ import sys
 import time
 import uuid
 import xml.etree.ElementTree as ET 
+from xml.parsers.expat import ExpatError
 
 import requests
 
 from os.path import (abspath, basename, dirname, expanduser, getsize, isdir,
         isfile, join, normpath, realpath, sep)
 from mutagen.easyid3 import EasyID3
+
+# Optional support for printing formatted descriptions
+try:
+    from prompt_toolkit import print_formatted_text, HTML
+except (ModuleNotFoundError, ImportError):
+    print_formatted_text = print
+    HTML = lambda x: x
 
 CONFIG_FILE = join(dirname(realpath(__file__)), 'config.toml')
 config = {'download_dir': '~/Documents/audiobooks/',
@@ -49,9 +57,13 @@ def print_metadata(odm_filename):
     logging.info('Printing Metadata from ODM file {}'.format(odm_filename))
     print('Content Type: {}\nExpiration Date: {}\nNumber of Parts: {}\n'
             'Title: {}\nAuthor: {}\nPublisher: {}\n'
-            'Subjects: {}\nLanguage: {}\nDescription: {}'.format(
+            'Subjects: {}\nLanguage: {}\nDescription: '.format(
                 content_type, expiration_date, num_parts, title, author,
-                publisher, subjects, language, description))
+                publisher, subjects, language))
+    try:
+        print_formatted_text(HTML(description))
+    except ExpatError:
+        print(description)
 
 def download_audiobook(
         odm_filename,
@@ -198,7 +210,13 @@ def _extract_metadata(odm_filename):
     language_elements = metadata.findall('.//Language')
     language = ', '.join([e.text for e in language_elements])
     description = metadata.findtext('Description')
+    # convert line breaks to newlines
     description = re.sub('<br>', '\n', description)
+    # convert first paragraph tag to nothing
+    description = re.sub('^<p>', '', description)
+    # convert subsequent paragraph tags to newlines
+    description = re.sub('<p>', '\n', description)
+    description = re.sub(r'</p>', '', description)
 
     root = ET.fromstring(odm_str)
     expiration_date = root.findtext('.//ExpirationDate')
