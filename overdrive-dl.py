@@ -188,20 +188,8 @@ def _download_cover_image(cover_url, cover_path):
             r.status_code))
 
 def _extract_metadata(odm_filename):
-    odm_str = ''
-    with open(odm_filename, 'r') as fd:
-        odm_str = fd.read()
-
-    m = re.search(r'<Metadata>.*</Metadata>', odm_str, flags=re.S)
-    if not m:
-        _die('Could not find Metadata in {}'.format(odm_filename))
-    metadata = ET.fromstring(m.group(0))
-    author_elements = metadata.findall('.//Creator[@role="Author"]')
-    author = ', '.join([e.text for e in author_elements])
-    # Use editors if there are no authors
-    if author == '':
-        author_elements = metadata.findall('.//Creator[@role="Editor"]')
-        author = ', '.join([e.text for e in author_elements])
+    odm_root, metadata = _get_odm_root_and_metadata(odm_filename)
+    author = _get_author_from_metadata(metadata)
     title = metadata.findtext('Title')
     content_type = metadata.findtext('ContentType')
     publisher = metadata.findtext('Publisher')
@@ -225,29 +213,16 @@ def _extract_metadata(odm_filename):
     description = re.sub(r'<li>', '\n* ', description, flags=re.IGNORECASE)
     description = re.sub(r'</li>', '', description, flags=re.IGNORECASE)
 
-    root = ET.fromstring(odm_str)
-    expiration_date = root.findtext('.//ExpirationDate')
-    library = root.findtext('.//Source/Name')
-    p = root.find('.//Parts')
+    expiration_date = odm_root.findtext('.//ExpirationDate')
+    library = odm_root.findtext('.//Source/Name')
+    p = odm_root.find('.//Parts')
     num_parts = int(p.get('count', default=0)) if p is not None else 0
     return (author, title, content_type, publisher, subjects,
             language, description, expiration_date, library, num_parts)
 
 def _extract_author_title_urls_parts(odm_filename):
-    odm_str = ''
-    with open(odm_filename, 'r') as fd:
-        odm_str = fd.read()
-
-    m = re.search(r'<Metadata>.*</Metadata>', odm_str, flags=re.S)
-    if not m:
-        _die('Could not find Metadata in {}'.format(odm_filename))
-    metadata = ET.fromstring(m.group(0))
-    author_elements = metadata.findall('.//Creator[@role="Author"]')
-    author = ';'.join([e.text for e in author_elements])
-    # Use editors if there are no authors
-    if author == '':
-        author_elements = metadata.findall('.//Creator[@role="Editor"]')
-        author = ';'.join([e.text for e in author_elements])
+    odm_root, metadata = _get_odm_root_and_metadata(odm_filename)
+    author = _get_author_from_metadata(metadata)
     title = metadata.findtext('Title')
     cover_url = metadata.findtext('CoverUrl', '')
     logging.info('Got title "{}" and author'.format(title)
@@ -260,21 +235,46 @@ def _extract_author_title_urls_parts(odm_filename):
         author = author.lower()
         title = title.lower()
 
-    root = ET.fromstring(odm_str)
     # Find the Protocol element with the URL for downloading
-    p = root.find('.//Protocol[@method="download"]')
+    p = odm_root.find('.//Protocol[@method="download"]')
     base_url = p.get('baseurl', default='') if p is not None else ''
     if not base_url:
         _die('Trouble extracting URL from ODM file')
 
-    p = root.find('.//Parts')
+    p = odm_root.find('.//Parts')
     num_parts = int(p.get('count', default=0)) if p is not None else 0
     # Find all the parts to download
-    parts = root.findall('.//Part')
+    parts = odm_root.findall('.//Part')
     if len(parts) != num_parts:
         _die('Bad ODM file: Expecting {} parts, but found {}'
         'part records'.format(num_parts, len(parts)))
     return (author, title, cover_url, base_url, parts)
+
+def _get_odm_root_and_metadata(odm_filename):
+    odm_str = ''
+    with open(odm_filename, 'r') as fd:
+        odm_str = fd.read()
+
+    root = ET.fromstring(odm_str)
+    m = re.search(r'<Metadata>.*</Metadata>', odm_str, flags=re.S)
+    if not m:
+        _die('Could not find Metadata in {}'.format(odm_filename))
+    # escape standalone ampersands
+    metadata_str = re.sub(r' & ', ' &amp; ', m.group(0))
+    metadata = ET.fromstring(metadata_str)
+    return root, metadata
+
+def _get_author_from_metadata(metadata):
+    creator_elements = metadata.findall('.//Creator')
+    author_elements = [elmt for elmt in creator_elements
+            if 'author' in str.lower(elmt.attrib.get('role'))]
+    author = ';'.join([e.text for e in author_elements])
+    # Use editors if there are no authors
+    if author == '':
+        author_elements = [elmt for elmt in creator_elements
+                if 'editor' in str.lower(elmt.attrib.get('role'))]
+        author = ';'.join([e.text for e in author_elements])
+    return author
 
 def _update_tags(tags_to_update, download_dir, num_parts):
         logging.info('Updating ID3 tags')
